@@ -23,21 +23,21 @@
  */
 package com.sonymobile.jenkins.plugins.mq.mqnotifier;
 
-import com.rabbitmq.client.ConnectionFactory;
-import com.rabbitmq.client.PossibleAuthenticationFailureException;
 import hudson.Extension;
 import hudson.util.FormValidation;
-import hudson.util.Secret;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+
+import javax.servlet.ServletException;
+
 import jenkins.model.GlobalConfiguration;
 import net.sf.json.JSONObject;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.validator.routines.UrlValidator;
+
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest;
-
-import javax.servlet.ServletException;
-import java.net.URISyntaxException;
 
 /**
  * Adds the MQ notifier plugin configuration to the system config page.
@@ -46,36 +46,20 @@ import java.net.URISyntaxException;
  */
 @Extension
 public final class MQNotifierConfig extends GlobalConfiguration {
-    private final String[] schemes = { "amqp", "amqps" };
-    private static final String SERVER_URI = "serverUri";
-    private static final String USERNAME = "userName";
+    private static final String SERVER_HOST = "host";
+    private static final String SERVER_PORT = "port";
     private static final String PASSWORD = "userPassword";
 
-    /* The MQ server URI */
-    private String serverUri;
-    private String userName;
-    private Secret userPassword;
+    /* The MQ server host */
+    private String host;
+    private int port;
 
-    /* The notifier plugin sends messages to an exchange which will push the messages to one or several queues.*/
-    private String exchangeName;
-
-    /* The virtual host which the connection intends to operate within. */
-    private String virtualHost;
-
-    /* Messages will be sent with a routing key which allows messages to be delivered to queues that are bound with a
-     * matching binding key. The routing key must be a list of words, delimited by dots.
-     */
-    private String routingKey;
-    /* Messages delivered to durable queues will be logged to disk if persistent delivery is set. */
-    private boolean persistentDelivery;
-    /* Application id that can be read by the consumer (optional). */
-    private String appId;
 
     /**
      * Creates an instance with specified parameters.
-     *
-     * @param serverUri the server uri
-     * @param userName the user name
+     * 
+     * @param host the server uri
+     * @param port the user name
      * @param userPassword the user password
      * @param exchangeName the name of the exchange
      * @param virtualHost the name of the virtual host
@@ -84,80 +68,41 @@ public final class MQNotifierConfig extends GlobalConfiguration {
      * @param appId the application id
      */
     @DataBoundConstructor
-    public MQNotifierConfig(String serverUri, String userName, Secret userPassword, String exchangeName,
-                            String virtualHost, String routingKey, boolean persistentDelivery, String appId) {
-        this.serverUri = serverUri;
-        this.userName = userName;
-        this.userPassword = userPassword;
-        this.exchangeName = exchangeName;
-        this.virtualHost = virtualHost;
-        this.routingKey = routingKey;
-        this.persistentDelivery = persistentDelivery;
-        this.appId = appId;
+    public MQNotifierConfig(String host, int port) {
+        this.host = host;
+        this.port = port;
     }
 
     /**
      * Load configuration on invoke.
      */
     public MQNotifierConfig() {
-        this.persistentDelivery = true; // default value
         load();
     }
 
     @Override
     public boolean configure(StaplerRequest req, JSONObject formData) throws FormException {
         req.bindJSON(this, formData);
-        if (formData.has("persistentDelivery")) {
-            this.persistentDelivery = formData.getBoolean("persistentDelivery");
-        }
         save();
         return true;
     }
 
-    /**
-     * Gets URI for MQ server.
-     *
-     * @return the URI.
-     */
-    public String getServerUri() {
-        return this.serverUri;
+    public String getHost() {
+        return host;
     }
 
-    /**
-     * Sets URI for MQ server.
-     *
-     * @param serverUri the URI.
-     */
-    public void setServerUri(final String serverUri) {
-        this.serverUri = StringUtils.strip(StringUtils.stripToNull(serverUri), "/");
+    public void setHost(String host) {
+        this.host = host;
     }
 
-    /**
-     * Gets user name.
-     *
-     * @return the user name.
-     */
-    public String getUserName() {
-        return this.userName;
+    public int getPort() {
+        return port;
     }
 
-    /**
-     * Sets user name.
-     *
-     * @param userName the user name.
-     */
-    public void setUserName(String userName) {
-        this.userName = userName;
+    public void setPort(int port) {
+        this.port = port;
     }
 
-    /**
-     * Gets user password.
-     *
-     * @return the user password.
-     */
-    public Secret getUserPassword() {
-        return this.userPassword;
-    }
 
     /**
      * Gets this extension's instance.
@@ -168,133 +113,61 @@ public final class MQNotifierConfig extends GlobalConfiguration {
         return GlobalConfiguration.all().get(MQNotifierConfig.class);
     }
 
-    /**
-     * Gets the exchange name.
-     *
-     * @return the exchange name.
+    /*
+     * This method runs when user clicks Test Connection button.
+     * 
+     * @return message indicating whether connection test passed or failed
      */
-    public String getExchangeName() {
-        return this.exchangeName;
+    public FormValidation doTestConnection(
+            @QueryParameter("host") final String host,
+            @QueryParameter("port") final int port) throws IOException,
+            ServletException {
+
+        if (connectionIsAvailable(host, port, 5000)) {
+            return FormValidation.ok("Success");
+        } else {
+            return FormValidation.error("Failed: Unable to Connect");
+        }
     }
 
-    /**
-     * Sets the exchange name.
-     *
-     * @param exchangeName the exchange name.
+    /*
+     * This method checks whether a connection is open and available on $host:$port
+     * 
+     * @param host the host name
+     * 
+     * @param port the host port
+     * 
+     * @param timeout the timeout (milliseconds) to try the connection
+     * 
+     * @return boolean true if a socket connection can be established otherwise false
      */
-    public void setExchangeName(String exchangeName) {
-        this.exchangeName = exchangeName;
-    }
+    private boolean connectionIsAvailable(String host, int port,
+            int timeout) {
 
-    /**
-     * Gets the virtual host name.
-     *
-     * @return the virtual host name.
-     */
-    public String getVirtualHost() {
-        return this.virtualHost;
-    }
+        InetSocketAddress endPoint = new InetSocketAddress(host, port);
+        Socket socket = new Socket();
 
-    /**
-     * Sets the virtual host name.
-     *
-     * @param virtualHost the exchange name.
-     */
-    public void setVirtualHost(String virtualHost) {
-        this.virtualHost = virtualHost;
-    }
-
-    /**
-     * Gets the routing key.
-     *
-     * @return the routing key.
-     */
-    public String getRoutingKey() {
-        return this.routingKey;
-    }
-
-    /**
-     * Sets the routing key.
-     *
-     * @param routingKey the routing key.
-     */
-    public void setRoutingKey(String routingKey) {
-        this.routingKey = routingKey;
-    }
-
-    /**
-     * Returns true if persistentDelivery is to be used.
-     *
-     * @return if persistentDelivery is to be used.
-     */
-    public boolean getPersistentDelivery() {
-        return this.persistentDelivery;
-    }
-
-    /**
-     * Sets persistent delivery mode.
-     *
-     * @param pd if persistentDelivery is to be used.
-     */
-    public void setDeliveryMode(boolean pd) {
-        this.persistentDelivery = pd;
-    }
-
-    /**
-     * Returns application id.
-     *
-     * @return application id.
-     */
-    public String getAppId() {
-        return this.appId;
-    }
-
-    /**
-     * Sets application id.
-     *
-     * @param appId Application id to use
-     */
-    public void setAppId(String appId) {
-        this.appId = appId;
-    }
-
-    /**
-     * Tests connection to the server URI.
-     *
-     * @param uri the URI.
-     * @param name the user name.
-     * @param pw the user password.
-     * @return FormValidation object that indicates ok or error.
-     * @throws javax.servlet.ServletException Exception for servlet.
-     */
-    public FormValidation doTestConnection(@QueryParameter(SERVER_URI) final String uri,
-                                           @QueryParameter(USERNAME) final String name,
-                                           @QueryParameter(PASSWORD) final Secret pw) throws ServletException {
-        UrlValidator urlValidator = new UrlValidator(schemes, UrlValidator.ALLOW_LOCAL_URLS);
-        FormValidation result = FormValidation.ok();
-        if (urlValidator.isValid(uri)) {
+        if (endPoint.isUnresolved()) {
+            System.out.println("Failure " + endPoint);
+        } else {
             try {
-                ConnectionFactory conn = new ConnectionFactory();
-                conn.setUri(uri);
-                if (StringUtils.isNotEmpty(name)) {
-                    conn.setUsername(name);
-                    if (StringUtils.isNotEmpty(Secret.toString(pw))) {
-                        conn.setPassword(Secret.toString(pw));
+                socket.connect(endPoint, timeout);
+                System.out.println("Connection Success:    " + endPoint);
+                return true;
+            } catch (Exception e) {
+                System.out.println("Connection Failure:    " + endPoint + " message: "
+                        + e.getClass().getSimpleName() + " - " + e.getMessage());
+            } finally {
+                if (socket != null) {
+                    try {
+                        socket.close();
+                    } catch (Exception e) {
+                        System.out.println(e.getMessage());
                     }
                 }
-                conn.newConnection();
-            } catch (URISyntaxException e) {
-                result = FormValidation.error("Invalid Uri");
-            } catch (PossibleAuthenticationFailureException e) {
-                result = FormValidation.error("Authentication Failure");
-            } catch (Exception e) {
-                result = FormValidation.error(e.getMessage());
             }
-        } else {
-            result = FormValidation.error("Invalid Uri");
-
         }
-        return result;
+        return false;
     }
 
 }

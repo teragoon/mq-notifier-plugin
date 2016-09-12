@@ -23,38 +23,31 @@
  */
 package com.sonymobile.jenkins.plugins.mq.mqnotifier;
 
-import com.rabbitmq.client.AMQP;
-import com.rabbitmq.client.AlreadyClosedException;
-import com.rabbitmq.client.Channel;
-import com.rabbitmq.client.Connection;
-import com.rabbitmq.client.ConnectionFactory;
-import com.rabbitmq.client.ShutdownListener;
-import com.rabbitmq.client.ShutdownSignalException;
-import hudson.util.Secret;
-import org.apache.commons.lang3.StringUtils;
+import java.util.UUID;
+
+import org.gearman.client.GearmanClient;
+import org.gearman.client.GearmanClientImpl;
+import org.gearman.client.GearmanJob;
+import org.gearman.client.GearmanJobImpl;
+import org.gearman.common.GearmanNIOJobServerConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.net.URISyntaxException;
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
 
 /**
  * Creates an MQ connection.
  *
  * @author Örjan Percy &lt;orjan.percy@sonymobile.com&gt;
  */
-public final class MQConnection implements ShutdownListener {
+public final class MQConnection {
     private static final Logger LOGGER = LoggerFactory.getLogger(MQConnection.class);
-    private static final int HEARTBEAT_INTERVAL = 30;
 
-    private String userName;
-    private Secret userPassword;
-    private String serverUri;
-    private String virtualHost;
-    private Connection connection = null;
-    private Channel channel = null;
+    private static MQConnection mqconn;
+
+    private String host;
+    private int port;
+
+    private static GearmanClient client = null;
+    private GearmanNIOJobServerConnection conn = null;
 
     /**
      * Lazy-loaded singleton using the initialization-on-demand holder pattern.
@@ -62,53 +55,17 @@ public final class MQConnection implements ShutdownListener {
     private MQConnection() { }
 
     /**
-     * Is only executed on {@link #getInstance()} invocation.
-     */
-    private static class LazyRabbit {
-        private static final MQConnection INSTANCE = new MQConnection();
-        private static final ConnectionFactory CF = new ConnectionFactory();
-    }
-
-    /**
      * Gets the instance.
      *
      * @return the instance
      */
     public static MQConnection getInstance() {
-        return LazyRabbit.INSTANCE;
-    }
-
-    /**
-     * Gets the connection factory that will enable a connection to the AMQP server.
-     *
-     * @return the connection factory
-     */
-    private ConnectionFactory getConnectionFactory() {
-        if (LazyRabbit.CF != null) {
-            try {
-                // Try to recover the topology along with the connection.
-                LazyRabbit.CF.setAutomaticRecoveryEnabled(true);
-                // set requested heartbeat interval, in seconds
-                LazyRabbit.CF.setRequestedHeartbeat(HEARTBEAT_INTERVAL);
-                LazyRabbit.CF.setUri(serverUri);
-                if (StringUtils.isNotEmpty(virtualHost)) {
-                    LazyRabbit.CF.setVirtualHost(virtualHost);
-                }
-            } catch (KeyManagementException e) {
-                LOGGER.error("KeyManagementException: ", e);
-            } catch (NoSuchAlgorithmException e) {
-                LOGGER.error("NoSuchAlgorithmException: ", e);
-            } catch (URISyntaxException e) {
-                LOGGER.error("URISyntaxException: ", e);
-            }
-            if (StringUtils.isNotEmpty(userName)) {
-                LazyRabbit.CF.setUsername(userName);
-                if (StringUtils.isNotEmpty(Secret.toString(userPassword))) {
-                    LazyRabbit.CF.setPassword(Secret.toString(userPassword));
-                }
-            }
+        LOGGER.info("[MQConnection][getInstance]");
+        if (mqconn == null) {
+            LOGGER.info("[MQConnection][getInstance] mqconn is null");
+            mqconn = new MQConnection();
         }
-        return LazyRabbit.CF;
+        return mqconn;
     }
 
     /**
@@ -116,94 +73,48 @@ public final class MQConnection implements ShutdownListener {
      *
      * @return the connection.
      */
-    public Connection getConnection() {
-        if (connection == null) {
-            try {
-                connection = getConnectionFactory().newConnection();
-                connection.addShutdownListener(this);
-            } catch (IOException e) {
-                LOGGER.warn("Connection refused", e);
-            }
+    public GearmanClient getConnection() {
+        LOGGER.info("[MQConnection][getConnection]");
+        if (client == null) {
+            LOGGER.info("[MQConnection][getConnection] client is null");
+            LOGGER.info("[MQConnection][getConnection] host : " + host + ", port : " + port);
+            client = new GearmanClientImpl();
+
+            conn = new GearmanNIOJobServerConnection(host, port);
+
+            boolean result = client.addJobServer(conn);
+
+            LOGGER.info("[MQConnection][getConnection] result is " + result);
         }
-        return connection;
+        return client;
     }
 
     /**
      * Initializes this instance with supplied values.
      *
-     * @param name the user name
-     * @param password the user password
-     * @param uri the server uri
-     * @param vh the virtual host
      */
-    public void initialize(String name, Secret password, String uri, String vh) {
-        userName = name;
-        userPassword = password;
-        serverUri = uri;
-        virtualHost = vh;
+    public void initialize(String host, int port) {
+        LOGGER.info("[MQConnection][initialize] host : " + host + ", port : " + port);
+        this.host = host;
+        this.port = port;
     }
 
     /**
      * Sends a message.
      * *
-     * @param exchange the exchange to publish the message to
-     * @param routingKey the routing key
-     * @param props other properties for the message - routing headers etc
      * @param body the message body
      */
-    public void send(String exchange, String routingKey, AMQP.BasicProperties props, byte[] body) {
-        if (exchange == null) {
-            LOGGER.error("Invalid configuration, exchange must not be null.");
-            return;
-        }
-        try {
-            if (channel == null || !channel.isOpen()) {
-                channel = getConnection().createChannel();
-                if (!getConnection().getAddress().isLoopbackAddress()) {
-                    channel.exchangeDeclarePassive(exchange);
-                }
-            }
-        } catch (IOException e) {
-            LOGGER.error("Cannot create channel", e);
-            channel = null; // reset
-        } catch (ShutdownSignalException e) {
-            LOGGER.error("Cannot create channel", e);
-            channel = null; // reset
-        }
-        if (channel != null) {
-            try {
-                channel.basicPublish(exchange, routingKey, props, body);
-            } catch (IOException e) {
-                LOGGER.error("Cannot publish message", e);
-            } catch (AlreadyClosedException e) {
-                LOGGER.error("Connection is already closed", e);
-            }
-        }
+    public void send(String function, byte[] body) {
+        LOGGER.info("[MQConnection][send] function : " + function);
+        client = getConnection();
+
+        String uniqueId = UUID.randomUUID().toString();
+        GearmanJob job = GearmanJobImpl.createBackgroundJob(function, body, uniqueId);
+
+
+        client.submit(job);
     }
 
-    @Override
-    public void shutdownCompleted(ShutdownSignalException cause) {
-        if (cause.isHardError()) {
-            if (!cause.isInitiatedByApplication()) {
-                LOGGER.warn("MQ connection was suddenly disconnected.");
-                try {
-                    if (connection != null && connection.isOpen()) {
-                        connection.close();
-                    }
-                    if (channel != null && channel.isOpen()) {
-                        channel.close();
-                    }
-                } catch (IOException e) {
-                    LOGGER.error("IOException: ", e);
-                } catch (AlreadyClosedException e) {
-                    LOGGER.error("AlreadyClosedException: ", e);
-                } finally {
-                    channel = null;
-                    connection = null;
-                }
-            }
-        } else {
-            LOGGER.warn("MQ channel was suddenly disconnected.");
-        }
-    }
+    // https://github.com/khaido/gearman-java-example/blob/master/src/main/java/org/gearman/example2/EchoClientAsynchronous.java
+    // https://github.com/slok/mdissphoto/tree/53e5bd32b2f80589dabda49b559bbfdb41440566/thumbnailer/src/main/java/org/mdissjava/thumbnailer/gearman/client
 }

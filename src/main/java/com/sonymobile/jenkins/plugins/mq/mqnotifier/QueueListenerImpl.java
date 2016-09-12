@@ -23,13 +23,13 @@
  */
 package com.sonymobile.jenkins.plugins.mq.mqnotifier;
 
-import com.rabbitmq.client.AMQP;
 import hudson.Extension;
 import hudson.model.Queue;
 import hudson.model.queue.QueueListener;
-import net.sf.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
+
+import net.sf.json.JSONObject;
 
 /**
  * Receives notifications about when tasks are submitted to the queue and publishes
@@ -39,12 +39,15 @@ import java.nio.charset.StandardCharsets;
 @Extension
 public class QueueListenerImpl extends QueueListener {
     private static MQNotifierConfig config;
-
+    private String function = null;
+    
     @Override
     public void onEnterWaiting(Queue.WaitingItem wi) {
         JSONObject json = new JSONObject();
         json.put(Util.KEY_STATE, Util.VALUE_ADDED_TO_QUEUE);
         json.put(Util.KEY_URL, Util.getJobUrl(wi));
+
+        setFunction(Util.VALUE_ADDED_TO_QUEUE);
         publish(json);
     }
 
@@ -58,6 +61,8 @@ public class QueueListenerImpl extends QueueListener {
             json.put(Util.KEY_DEQUEUE_REASON, Util.VALUE_BUILDING);
         }
         json.put(Util.KEY_URL, Util.getJobUrl(li));
+
+        setFunction(Util.VALUE_REMOVED_FROM_QUEUE);
         publish(json);
     }
 
@@ -71,16 +76,16 @@ public class QueueListenerImpl extends QueueListener {
             config = MQNotifierConfig.get();
         }
         if (config != null) {
-            AMQP.BasicProperties.Builder bob = new AMQP.BasicProperties.Builder();
-            int dm = 1;
-            if (config.getPersistentDelivery()) {
-                dm = 2;
-            }
-            bob.appId(config.getAppId());
-            bob.deliveryMode(dm);
-            bob.contentType(Util.CONTENT_TYPE);
-            MQConnection.getInstance().send(config.getExchangeName(), config.getRoutingKey(),
-                    bob.build(), json.toString().getBytes(StandardCharsets.UTF_8));
+            MQConnection.getInstance().send(getFunction(),
+                    json.toString().getBytes(StandardCharsets.UTF_8));
         }
+    }
+
+    public String getFunction() {
+        return function;
+    }
+
+    public void setFunction(String function) {
+        this.function = function;
     }
 }

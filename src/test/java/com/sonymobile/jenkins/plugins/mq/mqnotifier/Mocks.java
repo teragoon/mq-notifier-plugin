@@ -23,14 +23,14 @@
  */
 package com.sonymobile.jenkins.plugins.mq.mqnotifier;
 
-import com.rabbitmq.client.AMQP;
-import hudson.model.Run;
 import hudson.model.TaskListener;
-import mockit.Mock;
-import mockit.MockUp;
+import hudson.model.Run;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+
+import mockit.Mock;
+import mockit.MockUp;
 
 //CS IGNORE Javadoc FOR NEXT 50 LINES. REASON: TestData
 
@@ -57,7 +57,7 @@ public final class Mocks {
     public static final class RabbitMQConnectionMock extends MockUp<MQConnection> {
 
         @Mock
-        public void send(String exchangeName, String routingKey, AMQP.BasicProperties props, byte[] body) {
+        public void send(String function, byte[] body) {
             String str = new String(body);
             MESSAGES.add(str);
         }

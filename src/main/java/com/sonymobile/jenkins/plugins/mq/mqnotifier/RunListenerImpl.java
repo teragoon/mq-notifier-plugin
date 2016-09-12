@@ -23,23 +23,23 @@
  */
 package com.sonymobile.jenkins.plugins.mq.mqnotifier;
 
-import com.rabbitmq.client.AMQP;
 import hudson.Extension;
 import hudson.matrix.MatrixBuild;
 import hudson.matrix.MatrixProject;
-import hudson.model.AbstractBuild;
-import hudson.model.Cause;
 import hudson.model.Result;
-import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.TopLevelItem;
+import hudson.model.AbstractBuild;
+import hudson.model.Cause;
+import hudson.model.Run;
 import hudson.model.listeners.RunListener;
-import jenkins.model.Jenkins;
-import net.sf.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedList;
 import java.util.List;
+
+import jenkins.model.Jenkins;
+import net.sf.json.JSONObject;
 
 /**
  * Receives notifications about builds and publish messages on configured MQ server.
@@ -50,6 +50,7 @@ import java.util.List;
 public class RunListenerImpl extends RunListener<Run> {
 
     private static MQNotifierConfig config;
+    private String function = null;
 
     /**
      * Constructor for RunListenerImpl.
@@ -91,6 +92,8 @@ public class RunListenerImpl extends RunListener<Run> {
             json.put(Util.KEY_STATE, Util.VALUE_STARTED);
             json.put(Util.KEY_URL, Util.getJobUrl(r));
             json.put(Util.KEY_CAUSES, causes.toString());
+
+            setFunction(Util.VALUE_STARTED);
             publish(json);
         }
     }
@@ -108,6 +111,8 @@ public class RunListenerImpl extends RunListener<Run> {
                 status = res.toString();
             }
             json.put(Util.KEY_STATUS, status);
+
+            setFunction(Util.VALUE_COMPLETED);
             publish(json);
         }
     }
@@ -120,6 +125,8 @@ public class RunListenerImpl extends RunListener<Run> {
             json.put(Util.KEY_STATE, Util.VALUE_DELETED);
             json.put(Util.KEY_URL, Util.getJobUrl(r));
             json.put(Util.KEY_STATUS, Util.VALUE_DELETED);
+
+            setFunction(Util.VALUE_DELETED);
             publish(json);
         }
     }
@@ -134,16 +141,16 @@ public class RunListenerImpl extends RunListener<Run> {
             config = MQNotifierConfig.get();
         }
         if (config != null) {
-            AMQP.BasicProperties.Builder bob = new AMQP.BasicProperties.Builder();
-            int dm = 1;
-            if (config.getPersistentDelivery()) {
-                dm = 2;
-            }
-            bob.appId(config.getAppId());
-            bob.deliveryMode(dm);
-            bob.contentType(Util.CONTENT_TYPE);
-            MQConnection.getInstance().send(config.getExchangeName(), config.getRoutingKey(),
-                    bob.build(), json.toString().getBytes(StandardCharsets.UTF_8));
+            MQConnection.getInstance().send(getFunction(),
+                    json.toString().getBytes(StandardCharsets.UTF_8));
         }
+    }
+
+    public String getFunction() {
+        return function;
+    }
+
+    public void setFunction(String function) {
+        this.function = function;
     }
 }

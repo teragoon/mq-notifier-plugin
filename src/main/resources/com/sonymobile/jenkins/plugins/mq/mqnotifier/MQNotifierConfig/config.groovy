@@ -28,31 +28,13 @@ def l = "/plugin/mq-notifier/"
 
 f.section(title: "MQ Notifier") {
 
-    f.entry(title: "MQ URI", field: "serverUri", help: l+"help-amqp-uri.html") {
+    f.entry(title: "Gearman host", field: "host", help: l+"help-host.html") {
         f.textbox()
     }
-    f.entry(title: "User name", field: "userName", help: l+"help-user-name.html") {
+    f.entry(title: "Gearman port", field: "port", help: l+"help-port.html") {
         f.textbox()
     }
-    f.entry(title: "Password", field: "userPassword", help: l+"help-user-password.html") {
-        f.password()
-    }
+    
     f.validateButton(title: "Test Connection", progress: "Trying to connect...", method: "testConnection",
-            with: "serverUri,userName,userPassword")
-
-    f.entry(title: "Exchange Name", field: "exchangeName", help: l+"help-exchange-name.html") {
-        f.textbox()
-    }
-    f.entry(title: "Virtual host", field: "virtualHost", help: l+"help-virtual-host.html") {
-        f.textbox()
-    }
-    f.entry(title: "Routing Key", field: "routingKey", help: l+"help-routing-key.html") {
-        f.textbox()
-    }
-    f.entry(title: "Application Id", field: "appId", help: l+"help-application-id.html") {
-        f.textbox()
-    }
-    f.entry(title: "Persistent Delivery mode", help: l+"help-persistent-delivery.html") {
-        f.checkbox(field: "persistentDelivery", checked: instance.persistentDelivery)
-    }
+            with: "host,port")
 }

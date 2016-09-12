@@ -25,6 +25,7 @@ package com.sonymobile.jenkins.plugins.mq.mqnotifier;
 
 import hudson.Extension;
 import hudson.model.listeners.ItemListener;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,8 +51,7 @@ public class ItemListenerImpl extends ItemListener {
     public final void onLoaded() {
         LOGGER.info("All jobs have been loaded.");
         MQNotifierConfig config = MQNotifierConfig.get();
-        MQConnection.getInstance().initialize(config.getUserName(), config.getUserPassword(),
-                config.getServerUri(), config.getVirtualHost());
+        MQConnection.getInstance().initialize(config.getHost(), config.getPort());
         super.onLoaded();
     }
 }
