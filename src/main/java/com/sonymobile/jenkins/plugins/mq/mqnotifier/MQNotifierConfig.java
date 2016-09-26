@@ -48,7 +48,6 @@ import org.kohsuke.stapler.StaplerRequest;
 public final class MQNotifierConfig extends GlobalConfiguration {
     private static final String SERVER_HOST = "host";
     private static final String SERVER_PORT = "port";
-    private static final String PASSWORD = "userPassword";
 
     /* The MQ server host */
     private String host;
@@ -119,8 +118,8 @@ public final class MQNotifierConfig extends GlobalConfiguration {
      * @return message indicating whether connection test passed or failed
      */
     public FormValidation doTestConnection(
-            @QueryParameter("host") final String host,
-            @QueryParameter("port") final int port) throws IOException,
+            @QueryParameter(SERVER_HOST) final String host,
+            @QueryParameter(SERVER_PORT) final int port) throws IOException,
             ServletException {
 
         if (connectionIsAvailable(host, port, 5000)) {

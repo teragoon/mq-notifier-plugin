@@ -75,7 +75,7 @@ public final class MQConnection {
      */
     public GearmanClient getConnection() {
         LOGGER.info("[MQConnection][getConnection]");
-        if (client == null) {
+        if (client == null || client.isShutdown()) {
             LOGGER.info("[MQConnection][getConnection] client is null");
             LOGGER.info("[MQConnection][getConnection] host : " + host + ", port : " + port);
             client = new GearmanClientImpl();

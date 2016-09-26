@@ -41,6 +41,9 @@ import java.util.List;
 import jenkins.model.Jenkins;
 import net.sf.json.JSONObject;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Receives notifications about builds and publish messages on configured MQ server.
  *
@@ -48,6 +51,7 @@ import net.sf.json.JSONObject;
  */
 @Extension
 public class RunListenerImpl extends RunListener<Run> {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RunListenerImpl.class);
 
     private static MQNotifierConfig config;
     private String function = null;
@@ -93,6 +97,11 @@ public class RunListenerImpl extends RunListener<Run> {
             json.put(Util.KEY_URL, Util.getJobUrl(r));
             json.put(Util.KEY_CAUSES, causes.toString());
 
+            json.put(Util.KEY_PARAMS, ((AbstractBuild) r).getBuildVariables());
+            json.put(Util.KEY_NODE_NAME, ((AbstractBuild) r).getBuiltOnStr());
+
+            LOGGER.warn("[RunListenerImpl][onStarted]" + Util.KEY_NODE_NAME + " : "
+                    + ((AbstractBuild) r).getBuiltOnStr());
             setFunction(Util.VALUE_STARTED);
             publish(json);
         }
@@ -112,6 +121,9 @@ public class RunListenerImpl extends RunListener<Run> {
             }
             json.put(Util.KEY_STATUS, status);
 
+            json.put(Util.KEY_PARAMS, ((AbstractBuild) r).getBuildVariables());
+            json.put(Util.KEY_NODE_NAME, ((AbstractBuild) r).getBuiltOnStr());
+
             setFunction(Util.VALUE_COMPLETED);
             publish(json);
         }
@@ -125,6 +137,9 @@ public class RunListenerImpl extends RunListener<Run> {
             json.put(Util.KEY_STATE, Util.VALUE_DELETED);
             json.put(Util.KEY_URL, Util.getJobUrl(r));
             json.put(Util.KEY_STATUS, Util.VALUE_DELETED);
+
+            json.put(Util.KEY_PARAMS, ((AbstractBuild) r).getBuildVariables());
+            json.put(Util.KEY_NODE_NAME, ((AbstractBuild) r).getBuiltOnStr());
 
             setFunction(Util.VALUE_DELETED);
             publish(json);
